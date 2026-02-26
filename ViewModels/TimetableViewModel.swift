@@ -5,8 +5,16 @@ import SwiftUI
 struct IndexedSubject: Identifiable {
     let index: Int
     let subject: Subject
-    let slotID: UUID        // the slot's own UUID
+    let slotID: UUID
+    let isExtra: Bool
     var id: UUID { slotID }
+
+    init(index: Int, subject: Subject, slotID: UUID, isExtra: Bool = false) {
+        self.index = index
+        self.subject = subject
+        self.slotID = slotID
+        self.isExtra = isExtra
+    }
 }
 
 @MainActor

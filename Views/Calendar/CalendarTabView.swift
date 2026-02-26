@@ -4,6 +4,7 @@ struct CalendarTabView: View {
     @StateObject private var viewModel = CalendarViewModel()
     @State private var displayedMonth: Date = Date()
     @State private var showAddEvent = false
+    @State private var showAddExtraSheet = false
 
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
@@ -48,7 +49,18 @@ struct CalendarTabView: View {
                     .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
             }
-            .onAppear { viewModel.load() }
+            .sheet(isPresented: $showAddExtraSheet) {
+                CalendarAddExtraSheet(viewModel: viewModel)
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+            }
+            .onAppear {
+                viewModel.load()
+                viewModel.loadDateAttendance()
+            }
+            .onChange(of: viewModel.selectedDate) { _ in
+                viewModel.loadDateAttendance()
+            }
         }
     }
 
@@ -183,11 +195,26 @@ struct CalendarTabView: View {
                     .foregroundStyle(AppTheme.accent)
                 Spacer()
                 Button {
+                    showAddExtraSheet = true
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 12))
+                        Text("Extra")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(AppTheme.accentSecondary)
+                }
+                Button {
                     showAddEvent = true
                 } label: {
-                    Label("Add Event", systemImage: "plus.circle")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AppTheme.accentWarm)
+                    HStack(spacing: 3) {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 12))
+                        Text("Event")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(AppTheme.accentWarm)
                 }
             }
             .padding(.horizontal, 4)
@@ -216,18 +243,21 @@ struct CalendarTabView: View {
                 }
             }
 
-            // Attendance records for this day
-            let dayEntries = viewModel.entriesForSelectedDate()
-            if dayEntries.isEmpty && dayEvents.isEmpty && dayDLs.isEmpty {
+            // Interactive attendance for this day
+            let attendanceItems = viewModel.dateAttendanceItems
+            if attendanceItems.isEmpty && dayEvents.isEmpty && dayDLs.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
                         Image(systemName: "tray")
                             .font(.system(size: 28))
                             .foregroundStyle(AppTheme.textTertiary)
-                        Text("No records or events")
+                        Text("No classes or events")
                             .font(.system(size: 14))
                             .foregroundStyle(AppTheme.textTertiary)
+                        Text("Tap \"Extra\" to add a class")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.textTertiary.opacity(0.7))
                     }
                     .padding(.vertical, 24)
                     Spacer()
@@ -238,36 +268,17 @@ struct CalendarTabView: View {
                     RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
                         .stroke(AppTheme.separator, lineWidth: 1)
                 )
-            } else if !dayEntries.isEmpty {
+            } else if !attendanceItems.isEmpty {
                 VStack(spacing: 8) {
-                    ForEach(dayEntries, id: \.0.id) { (subject, status) in
-                        HStack(spacing: 12) {
-                            Image(systemName: status.icon)
-                                .font(.system(size: 16))
-                                .foregroundStyle(AppTheme.statusColor(for: status))
-                                .frame(width: 24)
-
-                            Text(subject.name)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(AppTheme.textPrimary)
-
-                            Spacer()
-
-                            Text(status.label)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(AppTheme.textPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(AppTheme.statusColor(for: status).opacity(0.8))
-                                .clipShape(Capsule())
+                    ForEach(attendanceItems) { item in
+                        SubjectAttendanceCard(
+                            subject: item.subject,
+                            status: viewModel.dateAttendanceEntries[item.slotID] ?? .clear,
+                            hasDutyLeave: viewModel.isDutyLeaveForDate(subjectID: item.subject.id),
+                            isExtra: item.isExtra
+                        ) { newStatus in
+                            viewModel.setDateAttendanceStatus(newStatus, for: item)
                         }
-                        .padding(12)
-                        .background(AppTheme.card)
-                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadiusSmall))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AppTheme.cornerRadiusSmall)
-                                .stroke(AppTheme.separator, lineWidth: 1)
-                        )
                     }
                 }
             }
@@ -533,5 +544,81 @@ struct DutyLeaveCard: View {
             RoundedRectangle(cornerRadius: AppTheme.cornerRadiusSmall)
                 .stroke(AppTheme.accentSubtle.opacity(0.25), lineWidth: 1)
         )
+    }
+}
+
+// MARK: - Calendar Add Extra Class Sheet
+
+struct CalendarAddExtraSheet: View {
+    @ObservedObject var viewModel: CalendarViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppTheme.background.ignoresSafeArea()
+
+                if viewModel.subjects.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "books.vertical")
+                            .font(.system(size: 32))
+                            .foregroundStyle(AppTheme.textTertiary)
+                        Text("No subjects yet")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary)
+                        Text("Add subjects in the Subjects tab first.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(viewModel.subjects) { subject in
+                                Button {
+                                    viewModel.addExtraClassForDate(subject)
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Circle()
+                                            .fill(AppTheme.accentSecondary.opacity(0.3))
+                                            .frame(width: 36, height: 36)
+                                            .overlay(
+                                                Text(String(subject.name.prefix(1)).uppercased())
+                                                    .font(.system(size: 15, weight: .bold))
+                                                    .foregroundStyle(AppTheme.accentSecondary)
+                                            )
+                                        Text(subject.name)
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(AppTheme.textPrimary)
+                                        Spacer()
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.system(size: 18))
+                                            .foregroundStyle(AppTheme.accentSecondary)
+                                    }
+                                    .padding(12)
+                                    .background(AppTheme.card)
+                                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadiusSmall))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: AppTheme.cornerRadiusSmall)
+                                            .stroke(AppTheme.separator, lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+            .navigationTitle("Add Extra Class")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+            }
+        }
     }
 }

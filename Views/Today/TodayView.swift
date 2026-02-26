@@ -3,6 +3,7 @@ import SwiftUI
 struct TodayView: View {
     @StateObject private var viewModel = TodayViewModel()
     @State private var showDutyLeaveSheet = false
+    @State private var showAddExtraClassSheet = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,7 @@ struct TodayView: View {
                                     subject: item.subject,
                                     status: viewModel.status(for: item),
                                     hasDutyLeave: hasDL,
+                                    isExtra: item.isExtra,
                                     onStatusChange: { status in
                                         viewModel.setStatus(status, for: item)
                                     }
@@ -53,18 +55,38 @@ struct TodayView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showDutyLeaveSheet = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "doc.badge.plus")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Duty Leave")
-                                .font(.system(size: 13, weight: .medium))
+                    HStack(spacing: 12) {
+                        Button {
+                            showAddExtraClassSheet = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Extra")
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            .foregroundStyle(AppTheme.accentSecondary)
                         }
-                        .foregroundStyle(AppTheme.accentSubtle)
+                        .disabled(viewModel.subjects.isEmpty)
+
+                        Button {
+                            showDutyLeaveSheet = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.badge.plus")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("DL")
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            .foregroundStyle(AppTheme.accentSubtle)
+                        }
                     }
                 }
+            }
+            .sheet(isPresented: $showAddExtraClassSheet) {
+                AddExtraClassSheet(viewModel: viewModel)
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showDutyLeaveSheet) {
                 viewModel.load()  // refresh after adding DL
@@ -190,7 +212,16 @@ struct SubjectAttendanceCard: View {
     let subject: Subject
     let status: AttendanceStatus
     let hasDutyLeave: Bool
+    let isExtra: Bool
     let onStatusChange: (AttendanceStatus) -> Void
+
+    init(subject: Subject, status: AttendanceStatus, hasDutyLeave: Bool, isExtra: Bool = false, onStatusChange: @escaping (AttendanceStatus) -> Void) {
+        self.subject = subject
+        self.status = status
+        self.hasDutyLeave = hasDutyLeave
+        self.isExtra = isExtra
+        self.onStatusChange = onStatusChange
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -198,6 +229,16 @@ struct SubjectAttendanceCard: View {
                 Text(subject.name)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary)
+
+                if isExtra {
+                    Text("Extra")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(AppTheme.accentSecondary.opacity(0.4))
+                        .clipShape(Capsule())
+                }
 
                 if hasDutyLeave {
                     Text("Duty Leave")
@@ -544,5 +585,64 @@ struct AddDutyLeaveSheet: View {
                 RoundedRectangle(cornerRadius: AppTheme.cornerRadiusSmall)
                     .stroke(AppTheme.separator, lineWidth: 1)
             )
+    }
+}
+
+// MARK: - Add Extra Class Sheet
+
+struct AddExtraClassSheet: View {
+    @ObservedObject var viewModel: TodayViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppTheme.background.ignoresSafeArea()
+
+                if viewModel.subjects.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("No subjects yet")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary)
+                        Text("Add subjects in the Subjects tab first")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                } else {
+                    List {
+                        ForEach(viewModel.subjects) { subject in
+                            Button {
+                                withAnimation {
+                                    viewModel.addExtraClass(subject)
+                                }
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Text(subject.name)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundStyle(AppTheme.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundStyle(AppTheme.accentSecondary)
+                                }
+                            }
+                            .listRowBackground(AppTheme.card)
+                            .listRowSeparatorTint(AppTheme.separator)
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .navigationTitle("Add Extra Class")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+            }
+        }
     }
 }

@@ -20,12 +20,23 @@ final class TodayViewModel: ObservableObject {
             return IndexedSubject(index: index, subject: subject, slotID: slot.id)
         }
 
-        // Load today's entries, keyed by slotID
         let allEntries = storage.loadEntries()
         let todayKey = todayDateKey()
+        let timetableSlotIDs = Set(todaySubjects.map { $0.slotID })
         entries = [:]
+
         for entry in allEntries where entry.dateKey == todayKey {
             entries[entry.slotID] = entry.status
+            // Reconstruct extra classes (entries not matching any timetable slot)
+            if !timetableSlotIDs.contains(entry.slotID),
+               let subject = subjects.first(where: { $0.id == entry.subjectID }) {
+                todaySubjects.append(IndexedSubject(
+                    index: todaySubjects.count,
+                    subject: subject,
+                    slotID: entry.slotID,
+                    isExtra: true
+                ))
+            }
         }
 
         dutyLeaves = storage.loadDutyLeaves()
@@ -55,13 +66,33 @@ final class TodayViewModel: ObservableObject {
         storage.saveDutyLeaves(dutyLeaves)
     }
 
+    func addExtraClass(_ subject: Subject) {
+        let slotID = UUID()
+        let newItem = IndexedSubject(
+            index: todaySubjects.count,
+            subject: subject,
+            slotID: slotID,
+            isExtra: true
+        )
+        todaySubjects.append(newItem)
+        entries[slotID] = .present
+        saveEntries()
+    }
+
     func status(for item: IndexedSubject) -> AttendanceStatus {
         entries[item.slotID] ?? .clear
     }
 
     func setStatus(_ status: AttendanceStatus, for item: IndexedSubject) {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            entries[item.slotID] = status
+        if item.isExtra && status == .clear {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                todaySubjects.removeAll { $0.slotID == item.slotID }
+                entries.removeValue(forKey: item.slotID)
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                entries[item.slotID] = status
+            }
         }
         saveEntries()
     }
@@ -69,14 +100,10 @@ final class TodayViewModel: ObservableObject {
     private func saveEntries() {
         var allEntries = storage.loadEntries()
         let todayKey = todayDateKey()
-        let trackedSlotIDs = Set(todaySubjects.map { $0.slotID })
 
-        // Remove existing entries for today's tracked slots
-        allEntries.removeAll { entry in
-            entry.dateKey == todayKey && trackedSlotIDs.contains(entry.slotID)
-        }
+        // Remove ALL entries for today, then re-add current state
+        allEntries.removeAll { $0.dateKey == todayKey }
 
-        // Save current state — only non-clear entries
         let today = Date()
         for item in todaySubjects {
             let status = entries[item.slotID] ?? .clear

@@ -9,6 +9,10 @@ final class CalendarViewModel: ObservableObject {
     @Published var events: [CalendarEvent] = []
     @Published var dutyLeaves: [DutyLeave] = []
 
+    // Date attendance marking
+    @Published var dateAttendanceItems: [IndexedSubject] = []
+    @Published var dateAttendanceEntries: [UUID: AttendanceStatus] = [:]
+
     private let storage = LocalStorageManager.shared
 
     func load() {
@@ -105,5 +109,93 @@ final class CalendarViewModel: ObservableObject {
     func weekday(for date: Date) -> Weekday {
         let weekdayNumber = Calendar.current.component(.weekday, from: date)
         return Weekday(rawValue: weekdayNumber) ?? .monday
+    }
+
+    // MARK: - Date Attendance Marking
+
+    func loadDateAttendance() {
+        let weekdayNum = Calendar.current.component(.weekday, from: selectedDate)
+        guard let weekday = Weekday(rawValue: weekdayNum) else { return }
+
+        let slots = timetable.slots(for: weekday)
+        dateAttendanceItems = slots.enumerated().compactMap { index, slot in
+            guard let subject = subjects.first(where: { $0.id == slot.subjectID }) else { return nil }
+            return IndexedSubject(index: index, subject: subject, slotID: slot.id)
+        }
+
+        let dk = selectedDateKey
+        let timetableSlotIDs = Set(dateAttendanceItems.map { $0.slotID })
+        dateAttendanceEntries = [:]
+
+        for entry in entries where entry.dateKey == dk {
+            dateAttendanceEntries[entry.slotID] = entry.status
+            // Reconstruct extra classes
+            if !timetableSlotIDs.contains(entry.slotID),
+               let subject = subjects.first(where: { $0.id == entry.subjectID }) {
+                dateAttendanceItems.append(IndexedSubject(
+                    index: dateAttendanceItems.count,
+                    subject: subject,
+                    slotID: entry.slotID,
+                    isExtra: true
+                ))
+            }
+        }
+    }
+
+    func setDateAttendanceStatus(_ status: AttendanceStatus, for item: IndexedSubject) {
+        if item.isExtra && status == .clear {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                dateAttendanceItems.removeAll { $0.slotID == item.slotID }
+                dateAttendanceEntries.removeValue(forKey: item.slotID)
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                dateAttendanceEntries[item.slotID] = status
+            }
+        }
+        saveDateAttendance()
+    }
+
+    func addExtraClassForDate(_ subject: Subject) {
+        let slotID = UUID()
+        let newItem = IndexedSubject(
+            index: dateAttendanceItems.count,
+            subject: subject,
+            slotID: slotID,
+            isExtra: true
+        )
+        dateAttendanceItems.append(newItem)
+        dateAttendanceEntries[slotID] = .present
+        saveDateAttendance()
+    }
+
+    func isDutyLeaveForDate(subjectID: UUID) -> Bool {
+        let dk = selectedDateKey
+        return dutyLeaves.contains { dl in
+            dl.coversDate(dk) && (dl.type == .fullDay || dl.subjectIDs.contains(subjectID))
+        }
+    }
+
+    private func saveDateAttendance() {
+        var allEntries = storage.loadEntries()
+        let dk = selectedDateKey
+
+        // Remove ALL entries for this date, then re-add current state
+        allEntries.removeAll { $0.dateKey == dk }
+
+        for item in dateAttendanceItems {
+            let status = dateAttendanceEntries[item.slotID] ?? .clear
+            guard status != .clear else { continue }
+            let entry = AttendanceEntry(
+                subjectID: item.subject.id,
+                slotID: item.slotID,
+                date: selectedDate,
+                status: status
+            )
+            allEntries.append(entry)
+        }
+
+        storage.saveEntries(allEntries)
+        entries = allEntries
     }
 }

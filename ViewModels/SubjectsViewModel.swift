@@ -55,8 +55,9 @@ final class SubjectsViewModel: ObservableObject {
         entries.filter { $0.subjectID == subject.id && $0.status == .off }.count
     }
 
-    /// Number of duty leave days that apply to this subject
-    func dutyLeaveCount(for subject: Subject) -> Int {
+    /// Returns the set of date keys where a duty leave applies to this subject,
+    /// checking that the subject actually has a timetable slot on that weekday.
+    private func dutyLeaveDateKeys(for subject: Subject) -> Set<String> {
         let timetable = storage.loadTimetable()
         var dlDates = Set<String>()
         let formatter = DateFormatter()
@@ -64,36 +65,43 @@ final class SubjectsViewModel: ObservableObject {
 
         for dl in dutyLeaves {
             let allKeys = dl.dateKeys
+            let isRelevant: Bool
             switch dl.type {
             case .fullDay:
-                for key in allKeys {
-                    if let date = formatter.date(from: key) {
-                        let weekdayNum = Calendar.current.component(.weekday, from: date)
-                        if let weekday = Weekday(rawValue: weekdayNum) {
-                            let slotsForDay = timetable.slots(for: weekday)
-                            if slotsForDay.contains(where: { $0.subjectID == subject.id }) {
-                                dlDates.insert(key)
-                            }
-                        }
-                    }
-                }
+                isRelevant = true
             case .perSubject:
-                if dl.subjectIDs.contains(subject.id) {
-                    for key in allKeys {
-                        dlDates.insert(key)
+                isRelevant = dl.subjectIDs.contains(subject.id)
+            }
+            guard isRelevant else { continue }
+
+            for key in allKeys {
+                if let date = formatter.date(from: key) {
+                    let weekdayNum = Calendar.current.component(.weekday, from: date)
+                    if let weekday = Weekday(rawValue: weekdayNum) {
+                        if timetable.slots(for: weekday).contains(where: { $0.subjectID == subject.id }) {
+                            dlDates.insert(key)
+                        }
                     }
                 }
             }
         }
+        return dlDates
+    }
 
-        return dlDates.count
+    /// Number of duty leave days that apply to this subject
+    func dutyLeaveCount(for subject: Subject) -> Int {
+        dutyLeaveDateKeys(for: subject).count
     }
 
     func attendancePercentage(for subject: Subject) -> Double {
+        let dlDates = dutyLeaveDateKeys(for: subject)
+        // Exclude entries on DL dates to prevent double-counting
         let relevantEntries = entries.filter {
-            $0.subjectID == subject.id && ($0.status == .present || $0.status == .absent)
+            $0.subjectID == subject.id &&
+            ($0.status == .present || $0.status == .absent) &&
+            !dlDates.contains($0.dateKey)
         }
-        let dlCount = dutyLeaveCount(for: subject)
+        let dlCount = dlDates.count
         let present = relevantEntries.filter { $0.status == .present }.count + dlCount
         let total = relevantEntries.count + dlCount
         guard total > 0 else { return 0 }
@@ -103,15 +111,20 @@ final class SubjectsViewModel: ObservableObject {
     /// Number of consecutive present classes needed to reach `threshold`.
     /// Returns nil if already at/above threshold or no data.
     func lecturesNeeded(for subject: Subject, threshold: Double) -> Int? {
+        let dlDates = dutyLeaveDateKeys(for: subject)
         let relevantEntries = entries.filter {
-            $0.subjectID == subject.id && ($0.status == .present || $0.status == .absent)
+            $0.subjectID == subject.id &&
+            ($0.status == .present || $0.status == .absent) &&
+            !dlDates.contains($0.dateKey)
         }
-        let dlCount = dutyLeaveCount(for: subject)
+        let dlCount = dlDates.count
         let p = Double(relevantEntries.filter { $0.status == .present }.count + dlCount)
         let total = Double(relevantEntries.count + dlCount)
         guard total > 0 else { return nil }
         let current = p / total
         guard current < threshold else { return nil }
+        // At 100% goal with any absence, recovery is impossible
+        guard threshold < 1.0 else { return nil }
         let n = (threshold * total - p) / (1.0 - threshold)
         return Int(ceil(n))
     }
@@ -119,15 +132,19 @@ final class SubjectsViewModel: ObservableObject {
     /// Number of classes that can be missed while staying at/above `threshold`.
     /// Returns nil if below threshold or no data.
     func lecturesCanMiss(for subject: Subject, threshold: Double) -> Int? {
+        let dlDates = dutyLeaveDateKeys(for: subject)
         let relevantEntries = entries.filter {
-            $0.subjectID == subject.id && ($0.status == .present || $0.status == .absent)
+            $0.subjectID == subject.id &&
+            ($0.status == .present || $0.status == .absent) &&
+            !dlDates.contains($0.dateKey)
         }
-        let dlCount = dutyLeaveCount(for: subject)
+        let dlCount = dlDates.count
         let p = Double(relevantEntries.filter { $0.status == .present }.count + dlCount)
         let total = Double(relevantEntries.count + dlCount)
         guard total > 0 else { return nil }
         let current = p / total
         guard current >= threshold else { return nil }
+        guard threshold > 0 else { return nil }
         let n = (p - threshold * total) / threshold
         let result = Int(floor(n))
         return result >= 0 ? result : 0
