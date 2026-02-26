@@ -1,8 +1,8 @@
-# Attendyy — Attendance Tracker & Goal Projector
+# Attendy — Attendance Tracker & Goal Projector
 
 **Track. Attend. Succeed.**
 
-Attendyy is a sophisticated iOS attendance tracking application built with **SwiftUI** and **Swift 6**, designed to help students monitor their class attendance, set attendance goals, and make data-driven decisions about future classes. The app provides intelligent projections to answer critical questions: *"How many classes can I safely miss?" or "How many consecutive classes do I need to attend?"*
+Attendy is a sophisticated iOS attendance tracking application built with **SwiftUI** and **Swift 6**, designed to help students monitor their class attendance, set attendance goals, and make data-driven decisions about future classes. The app provides intelligent projections to answer critical questions: *"How many classes can I safely miss?" or "How many consecutive classes do I need to attend?"*
 
 ---
 
@@ -129,7 +129,7 @@ Tap any subject to view:
 
 ### **Project Structure**
 ```
-Attendyy.swiftpm/
+Attendy.swiftpm/
 ├── AttendyApp.swift              # App entry point with splash screen
 ├── ContentView.swift             # Main TabView with 5 tabs
 ├── Info.plist
@@ -224,7 +224,7 @@ Attendyy.swiftpm/
 
 ### **Typography**
 - System fonts with semantic weights
-- Serif design for app branding (Attendyy logo)
+- Serif design for app branding (Attendy logo)
 - Monospaced for numeric displays (percentages, counts)
 
 ### **Component Library**
@@ -357,7 +357,7 @@ The app uses mathematical projections to answer attendance questions:
 - iPhone or iPad (landscape supported on iPad)
 
 ### **Installation**
-1. Open `Attendyy.swiftpm` in Xcode
+1. Open `Attendy.swiftpm` in Xcode
 2. Target: `iOS 16.0+`
 3. Build and run on simulator or device
 
@@ -451,7 +451,7 @@ This project was created as a SwiftUI challenge submission. All code is original
 
 ## 🙌 Credits
 
-**App Name**: Attendyy (Attend + Y for Student)  
+**App Name**: Attendy (Attend + Y for Student)  
 **Tagline**: Track. Attend. Succeed.  
 **Built With**: SwiftUI, Swift 6, MVVM  
 **Year**: 2026
